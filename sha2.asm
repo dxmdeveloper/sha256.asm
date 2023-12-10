@@ -4,42 +4,61 @@
 
 section .text
 
-global _sha256_chunk
-sha256_calc_chunk: ;void sha256_calc_chunk(uint32_t hash[8], const uint8_t chunk[64])
+%ifdef __win64__
+%macro linux_abi_args_conv 0
+    sub rsp, 16
+    push rdi
+    push rsi
+    mov rdi, rcx ; must be preserved in windows
+    mov rsi, rdx ; must be preserved in windows
+    mov rdx, r8
+    mov rcx, r9
+%endmacro
+%macro linux_abi_args_conv_pre_ret 0
+    pop rsi
+    pop rdi
+%endmacro
+%else
+%macro linux_abi_args_conv 0
+%endmacro
+%macro linux_abi_args_conv_pre_ret 0
+%endmacro
+%endif
+
+global _sha256_calc_chunk
+_sha256_calc_chunk: ;void _sha256_calc_chunk(uint32_t hash[8], const uint8_t chunk[64])
     push rbp
     mov rbp, rsp
 
-    ;u32 w[64] ; [rbp-256]
-    ;assign to first 16 elements of w values from chunk (func arg). Sha256 is big endian, so we have to do bswap.
-    %assign i 0
-    %rep 16
-        mov eax, [esi+4*i]
+    mov rcx, 15
+    endianess_ch_loop:
+        mov eax, [rsi+rcx*4]
         bswap eax
-        mov dword [ebp-256+4*i], eax
-        %assign i i+1
-    %endrep
+        mov [rbp-256+rcx*4], eax
+        sub rcx, 1
+        jnc endianess_ch_loop
 
     ;Initialize working variables to current hash value:
-    mov eax, [edi] ; a = hash[0]
-    mov [ebp-288], eax ; u32 a [ebp-288]
-    mov eax, [edi+4] 
-    mov [ebp-284], eax ; u32 b [ebp-284]
-    mov eax, [edi+8]
-    mov [ebp-280], eax ; u32 c [ebp-280]
-    mov eax, [edi+12]
-    mov [ebp-276], eax ; u32 d [ebp-276]
-    mov eax, [edi+16]
-    mov [ebp-272], eax ; u32 e [ebp-272]
-    mov eax, [edi+20]
-    mov [ebp-268], eax ; u32 f [ebp-268]
-    mov eax, [edi+24]
-    mov [ebp-264], eax ; u32 g [ebp-264]
-    mov eax, [edi+28]
-    mov [ebp-260], eax ; u32 h [ebp-260]
+    mov eax, [rdi] ; a = hash[0]
+    mov [rbp-288], eax ; u32 a [rbp-288]
+    mov eax, [rdi+4]
+    mov [rbp-284], eax ; u32 b [rbp-284]
+    mov eax, [rdi+8]
+    mov [rbp-280], eax ; u32 c [rbp-280]
+    mov eax, [rdi+12]
+    mov [rbp-276], eax ; u32 d [rbp-276]
+    mov eax, [rdi+16]
+    mov [rbp-272], eax ; u32 e [rbp-272]
+    mov eax, [rdi+20]
+    mov [rbp-268], eax ; u32 f [rbp-268]
+    mov eax, [rdi+24]
+    mov [rbp-264], eax ; u32 g [rbp-264]
+    mov eax, [rdi+28]
+    mov [rbp-260], eax ; u32 h [rbp-260]
 
     ; Move 1st arg to temporary register. Second argument will not be used again.
-    mov r10, rdi
-    
+    mov r9, rdi
+
     ; Extend the first 16 words into the remaining 48 words w[16..63] of the message schedule array:
     ; for i from 16 to 63
     ;    s0 := (w[i-15] rightrotate  7) xor (w[i-15] rightrotate 18) xor (w[i-15] rightshift  3)
@@ -48,7 +67,7 @@ sha256_calc_chunk: ;void sha256_calc_chunk(uint32_t hash[8], const uint8_t chunk
     %assign i 16
     %rep 48    
         ; eax as S0
-        mov eax, [ebp-256+4*(i-15)]
+        mov eax, [rbp-256+4*(i-15)]
         mov ecx, eax
         mov edx, eax
         ror eax, 7
@@ -58,7 +77,7 @@ sha256_calc_chunk: ;void sha256_calc_chunk(uint32_t hash[8], const uint8_t chunk
         xor eax, edx
 
         ; edx as S1
-        mov edx, [ebp-256+4*(i-2)]
+        mov edx, [rbp-256+4*(i-2)]
         mov ecx, edx
         mov edi, edx
         ror edx, 17
@@ -68,9 +87,9 @@ sha256_calc_chunk: ;void sha256_calc_chunk(uint32_t hash[8], const uint8_t chunk
         xor edx, edi
 
         add eax, edx
-        add eax, [ebp-256+4*(i-7)]
-        add eax, [ebp-256+4*(i-16)]
-        mov [ebp-256+4*i], eax
+        add eax, [rbp-256+4*(i-7)]
+        add eax, [rbp-256+4*(i-16)]
+        mov [rbp-256+4*i], eax
         %assign i i+1
     %endrep
 
@@ -83,10 +102,11 @@ sha256_calc_chunk: ;void sha256_calc_chunk(uint32_t hash[8], const uint8_t chunk
     ;     maj := (a and b) xor (a and c) xor (b and c)
     ;     temp2 := S0 + maj
 
+    compression:
     %assign i 0
     %rep 64
         ; eax as S1
-        mov eax, [ebp-272]
+        mov eax, [rbp-272] ; e
         mov ecx, eax
         mov edx, eax
         ror eax, 6
@@ -96,20 +116,21 @@ sha256_calc_chunk: ;void sha256_calc_chunk(uint32_t hash[8], const uint8_t chunk
         xor eax, edx
 
         ; ecx as ch
-        mov ecx, [ebp-272]
+        mov ecx, [rbp-272]
         mov edx, ecx
-        and ecx, [ebp-268]
+        and ecx, [rbp-268]
         not edx
-        and edx, [ebp-264]
+        and edx, [rbp-264]
         xor ecx, edx
 
         ; eax as temp1
-        add eax, [ebp-260]
-        add eax, [k256+4*i]
-        add eax, [ebp-256+4*i]
+        add eax, [rbp-260]      ; h
+        add eax, [k256+i*4]     ; k[i]
+        add eax, [rbp-256+i*4]  ; w[i]
+        add eax, ecx            ; ch
 
         ; edi as S0
-        mov edi, [ebp-288]
+        mov edi, [rbp-288]
         mov ecx, edi
         mov edx, edi
         ror edi, 2
@@ -119,36 +140,38 @@ sha256_calc_chunk: ;void sha256_calc_chunk(uint32_t hash[8], const uint8_t chunk
         xor edi, edx
 
         ; ecx as maj
-        mov ecx, [ebp-288]
+        mov ecx, [rbp-288]
         mov edx, ecx
-        and ecx, [ebp-284] ; a and b
-        and edx, [ebp-280] ; a and c
+        and ecx, [rbp-284] ; a and b
+        and edx, [rbp-280] ; a and c
         xor ecx, edx
-        mov edx, [ebp-284]
-        and edx, [ebp-280] ; b and c
+        mov edx, [rbp-284]
+        and edx, [rbp-280] ; b and c
         xor ecx, edx
         
         ; edi as temp2
         add edi, ecx
 
+        ; eax == temp1
+        ; edi == temp2
 
-        mov ecx, [ebp-264]
-        mov [ebp-260], ecx ; h := g
-        mov ecx, [ebp-268]
-        mov [ebp-264], ecx ; g := f
-        mov ecx, [ebp-272]
-        mov [ebp-268], ecx ; f := e
+        mov ecx, [rbp-264]
+        mov [rbp-260], ecx ; h := g
+        mov ecx, [rbp-268]
+        mov [rbp-264], ecx ; g := f
+        mov ecx, [rbp-272]
+        mov [rbp-268], ecx ; f := e
         mov ecx, eax
-        add ecx, [ebp-276]
-        mov [ebp-272], eax ; e := d + temp1
-        mov ecx, [ebp-280]
-        mov [ebp-272], ecx ; d := c
-        mov ecx, [ebp-284]
-        mov [ebp-280], ecx ; c := b
-        mov ecx, [ebp-288]
-        mov [ebp-284], ecx ; b := a
+        add ecx, [rbp-276]
+        mov [rbp-272], ecx ; e := d + temp1
+        mov ecx, [rbp-280]
+        mov [rbp-276], ecx ; d := c
+        mov ecx, [rbp-284]
+        mov [rbp-280], ecx ; c := b
+        mov ecx, [rbp-288]
+        mov [rbp-284], ecx ; b := a
         add eax, edi
-        mov [ebp-288], eax ; a := temp1 + temp2
+        mov [rbp-288], eax ; a := temp1 + temp2
 
         %assign i i+1
     %endrep
@@ -160,28 +183,98 @@ sha256_calc_chunk: ;void sha256_calc_chunk(uint32_t hash[8], const uint8_t chunk
     ; h7 := h7 + h
     %assign i 0
     %rep 8
-        mov eax, [r10+i*4]
-        add eax, [ebp-288+i*4]
-        mov [r10+i*4], eax
+        mov eax, [r9+i*4]
+        add eax, [rbp-288+i*4]
+        mov [r9+i*4], eax
         %assign i i+1
     %endrep
 
-global sha256
-sha256: ; struct{uint64_t[4]} sha256(uint8_t data[n], size_t n)
+    mov rdi, r9
+
+    leave
+    ret
+
+global asm_sha256_calc
+asm_sha256_calc: ; void asm_sha256_calc(uint8_t hash[8], uint8_t data[n], size_t len)
     push rbp
     mov rbp, rsp
-    ; don't forget to sub rsp
+    sub rsp, 96
+
+    push rbx
+    push r12
+
+    linux_abi_args_conv
 
     ; u32 hash[8]
-    mov dword [ebp-32], 0x6a09e667 ; hash[0] 
-    mov dword [ebp-28], 0xbb67ae85 ; hash[1]
-    mov dword [ebp-24], 0x3c6ef372 ; hash[2]
-    mov dword [ebp-20], 0xa54ff53a ; hash[3]
-    mov dword [ebp-16], 0x510e527f ; hash[4]
-    mov dword [ebp-12], 0x9b05688c ; hash[5]
-    mov dword [ebp-8],  0x1f83d9ab ; hash[6]
-    mov dword [ebp-4],  0x5be0cd19 ; hash[7]
+    mov dword [rdi],    0x6a09e667 ; hash[0]
+    mov dword [rdi+4],  0xbb67ae85 ; hash[1]
+    mov dword [rdi+8],  0x3c6ef372 ; hash[2]
+    mov dword [rdi+12], 0xa54ff53a ; hash[3]
+    mov dword [rdi+16], 0x510e527f ; hash[4]
+    mov dword [rdi+20], 0x9b05688c ; hash[5]
+    mov dword [rdi+24], 0x1f83d9ab ; hash[6]
+    mov dword [rdi+28], 0x5be0cd19 ; hash[7]
 
+    mov r10, rsi ; r10 == data
+    mov r11, rdx ; r11 == len (arg)
+    mov r12, rdx ; r12 == const len (for later)
+    cmp r11, 64
+    jc sha_padding
+    foreach_full_chunk:
+        mov rsi, r10
+        call _sha256_calc_chunk
+
+        add r10, 64
+        sub r11, 64
+        jl sha_padding
+
+    sha_padding:
+        mov r11, r12
+        and r11, 63 ; r11 %= 64 last_chunk_len
+
+        mov rcx, 7
+        zero_init_chunk1:
+            mov qword [rbp-64+rcx*8], 0
+            sub rcx, 1
+            jnc zero_init_chunk1
+
+        xor rcx, rcx
+        pad_memcpy:
+            cmp rcx, r11 ; r11 is last_chunk_len
+            jz pad_memcpy_end
+            mov al, [r10+rcx]
+            mov [rbp-64+rcx], al
+            inc rcx
+            jmp pad_memcpy
+
+        pad_memcpy_end:
+
+        ; append a bit 1
+        mov byte [rbp-64+r11], 0x80
+        cmp r11, 56
+        jc append_bit_len
+        ; if last_chunk_len > 56
+        lea rsi, [rbp-64]
+        call _sha256_calc_chunk
+        mov rcx, 6
+        zero_init_chunk2:
+            mov qword [rbp-64+rcx*8], 0
+            sub rcx, 1
+            jnc zero_init_chunk2
+
+        append_bit_len:
+            shl r12, 3 ; len * 8
+            bswap r12
+            mov [rbp-8], r12
+
+        lea rsi, [rbp-64]
+        call _sha256_calc_chunk
+
+    xor rax, rax
+
+    pop r12
+    pop rbx
+    linux_abi_args_conv_pre_ret
     leave
     ret
 
