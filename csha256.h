@@ -4,7 +4,7 @@
 
 #define SHA256_CHUNK_SIZE 64
 
-void csha256_calc_chunk(uint32_t hash[8], const uint8_t chunk[SHA256_CHUNK_SIZE]);
+void csha256_push_chunk(uint32_t hash[8], const uint8_t chunk[64]);
 
 void csha256_calc(uint32_t hash[8], const uint8_t *data, size_t len);
 

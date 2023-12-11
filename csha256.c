@@ -10,7 +10,7 @@ void csha256_calc(uint32_t *hash, const uint8_t *data, size_t len)
     memcpy(hash, init_hash256, 8 * sizeof(uint32_t));
 
     for (size_t i = 0; i < len / 64; i++) {
-        csha256_calc_chunk(hash, data+i*8);
+        csha256_push_chunk(hash, data + i * 8);
     }
 
     //  --- last chunk with padding ---
@@ -22,7 +22,7 @@ void csha256_calc(uint32_t *hash, const uint8_t *data, size_t len)
 
     if (last_chunk_size > 56) {
         // last chunk is too small to hold L (bit_len), so we need another chunk
-        csha256_calc_chunk(hash, chunk);
+        csha256_push_chunk(hash, chunk);
         memset(chunk, 0, 56); // initialize new chunk
     }
 
@@ -30,10 +30,10 @@ void csha256_calc(uint32_t *hash, const uint8_t *data, size_t len)
     bit_len = bswap64(bit_len);
     memcpy(chunk + 56, &bit_len, 8);
 
-    csha256_calc_chunk(hash, chunk);
+    csha256_push_chunk(hash, chunk);
 }
 
-void csha256_calc_chunk(uint32_t hash[8], const uint8_t chunk[64])
+void csha256_push_chunk(uint32_t hash[8], const uint8_t chunk[64])
 {
     uint32_t w[64];
     uint32_t a, b, c, d, e, f, g, h;
