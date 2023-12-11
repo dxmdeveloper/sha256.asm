@@ -1,5 +1,6 @@
 ; nasm intel style. x64 Linux ABI compatibile
 ;
+; Author: Maciej Bąbolewski
 ; based on: https://en.wikipedia.org/wiki/SHA-2#Pseudocode
 
 section .text
