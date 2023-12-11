@@ -1,16 +1,17 @@
 #include "sha256.asm/csha256.h"
 #include <memory.h>
+#include <stdio.h>
 
-#define bswap32(x) ((uint32_t)(x << 24 | (x << 8 & 0x00ff0000) | (x >> 8 & 0x0000ff00) | x >> 24))
+#define bswap32(x) ((uint32_t)((x) << 24 | ((x) << 8 & 0x00ff0000) | ((x) >> 8 & 0x0000ff00) | (x) >> 24))
 #define bswap64(x) (((uint64_t)bswap32((x))) << 32 | bswap32((x) >> 32))
-#define rotr32(x, n) (uint32_t)(x >> n | x << (32 - n))
+#define rotr32(x, n) (uint32_t)((x) >> n | (x) << (32 - n))
 
 void csha256_calc(uint32_t *hash, const uint8_t *data, size_t len)
 {
     memcpy(hash, init_hash256, 8 * sizeof(uint32_t));
 
     for (size_t i = 0; i < len / 64; i++) {
-        csha256_push_chunk(hash, data + i * 8);
+        csha256_push_chunk(hash, data + i * 64);
     }
 
     //  --- last chunk with padding ---
@@ -20,7 +21,7 @@ void csha256_calc(uint32_t *hash, const uint8_t *data, size_t len)
     memcpy(chunk, data + len - last_chunk_size, last_chunk_size);
     chunk[last_chunk_size] = 0x80; // 0b10000000
 
-    if (last_chunk_size > 56) {
+    if (last_chunk_size >= 56) {
         // last chunk is too small to hold L (bit_len), so we need another chunk
         csha256_push_chunk(hash, chunk);
         memset(chunk, 0, 56); // initialize new chunk

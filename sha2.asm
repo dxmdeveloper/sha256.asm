@@ -200,6 +200,7 @@ _asm_sha256_push_chunk: ;void _asm_sha256_push_chunk(uint32_t hash[8], const uin
     mov rsp, rbp
     pop rbp
     ret
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 global asm_sha256_calc
 asm_sha256_calc: ; void asm_sha256_calc(uint8_t hash[8], uint8_t data[n], size_t len)
@@ -223,15 +224,17 @@ asm_sha256_calc: ; void asm_sha256_calc(uint8_t hash[8], uint8_t data[n], size_t
     mov r10, rsi ; r10 == data
     mov r11, rdx ; r11 == len (arg)
     mov r12, rdx ; r12 == const len (for later)
-    cmp r11, 64
-    jc sha_padding
+
     foreach_full_chunk:
+        cmp r11, 64
+        jc sha_padding
+
         mov rsi, r10
         call _asm_sha256_push_chunk
 
         add r10, 64
         sub r11, 64
-        jl sha_padding
+        jmp foreach_full_chunk
 
     sha_padding:
         mov r11, r12
@@ -258,7 +261,7 @@ asm_sha256_calc: ; void asm_sha256_calc(uint8_t hash[8], uint8_t data[n], size_t
         mov byte [rbp-64+r11], 0x80
         cmp r11, 56
         jc append_bit_len
-        ; if last_chunk_len > 56
+        ; if (last_chunk_len >= 56) {
         lea rsi, [rbp-64]
         call _asm_sha256_push_chunk
         mov rcx, 6
@@ -266,7 +269,7 @@ asm_sha256_calc: ; void asm_sha256_calc(uint8_t hash[8], uint8_t data[n], size_t
             mov qword [rbp-64+rcx*8], 0
             sub rcx, 1
             jnc zero_init_chunk2
-
+        ; }
         append_bit_len:
             shl r12, 3 ; len * 8
             bswap r12
